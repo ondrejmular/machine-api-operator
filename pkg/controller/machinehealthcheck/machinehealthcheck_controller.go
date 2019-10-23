@@ -19,6 +19,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	apimachineryutilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -38,6 +39,7 @@ const (
 	remediationStrategyAnnotation = "healthchecking.openshift.io/strategy"
 	remediationStrategyReboot     = mhcv1beta1.RemediationStrategyType("reboot")
 	timeoutForMachineToHaveNode   = 10 * time.Minute
+	controllerName                = "machinehealthcheck-controller"
 )
 
 // Add creates a new MachineHealthCheck Controller and adds it to the Manager. The Manager will set fields on the Controller
@@ -53,12 +55,13 @@ func newReconciler(mgr manager.Manager, opts manager.Options) *ReconcileMachineH
 		client:    mgr.GetClient(),
 		scheme:    mgr.GetScheme(),
 		namespace: opts.Namespace,
+		recorder:  mgr.GetEventRecorderFor(controllerName),
 	}
 }
 
 // add adds a new Controller to mgr with r as the reconcile.Reconciler
 func add(mgr manager.Manager, r reconcile.Reconciler, mapMachineToMHC, mapNodeToMHC handler.ToRequestsFunc) error {
-	c, err := controller.New("machinehealthcheck-controller", mgr, controller.Options{Reconciler: r})
+	c, err := controller.New(controllerName, mgr, controller.Options{Reconciler: r})
 	if err != nil {
 		return err
 	}
@@ -85,6 +88,7 @@ type ReconcileMachineHealthCheck struct {
 	client    client.Client
 	scheme    *runtime.Scheme
 	namespace string
+	recorder  record.EventRecorder
 }
 
 type target struct {
@@ -116,7 +120,7 @@ func (r *ReconcileMachineHealthCheck) Reconcile(request reconcile.Request) (reco
 	totalTargets := len(targets)
 
 	// health check all targets and reconcile mhc status
-	currentHealthy, needRemediationTargets, nextCheckTimes, errList := healthCheckTargets(targets)
+	currentHealthy, needRemediationTargets, nextCheckTimes, errList := healthCheckTargets(targets, r.recorder)
 	if err := r.reconcileStatus(mhc, totalTargets, currentHealthy); err != nil {
 		glog.Errorf("Reconciling %s: error patching status: %v", request.String(), err)
 		return reconcile.Result{}, err
@@ -126,6 +130,15 @@ func (r *ReconcileMachineHealthCheck) Reconcile(request reconcile.Request) (reco
 	if !isAllowedRemediation(mhc) {
 		glog.Warningf("Reconciling %s: total targets: %v,  maxUnhealthy: %v, unhealthy: %v. Short-circuiting remediation",
 			request.String(),
+			totalTargets,
+			mhc.Spec.MaxUnhealthy,
+			totalTargets-currentHealthy,
+		)
+		r.recorder.Eventf(
+			mhc,
+			corev1.EventTypeWarning,
+			healthcheckingv1alpha1.EventRemediationRestricted,
+			"Remediation restricted due to exceeded number of unhealthy machines (total: %v, unhealthy: %v, maxUnhealthy: %v)",
 			totalTargets,
 			mhc.Spec.MaxUnhealthy,
 			totalTargets-currentHealthy,
@@ -191,7 +204,7 @@ func (r *ReconcileMachineHealthCheck) reconcileStatus(mhc *mhcv1beta1.MachineHea
 
 // healthCheckTargets health checks a slice of targets
 // and gives a data to measure the average health
-func healthCheckTargets(targets []target) (int, []target, []time.Duration, []error) {
+func healthCheckTargets(targets []target, recorder record.EventRecorder) (int, []target, []time.Duration, []error) {
 	var nextCheckTimes []time.Duration
 	var errList []error
 	var needRemediationTargets []target
@@ -212,6 +225,14 @@ func healthCheckTargets(targets []target) (int, []target, []time.Duration, []err
 
 		if nextCheck > 0 {
 			glog.V(3).Infof("Reconciling %s: is likely to go unhealthy in %v", t.string(), nextCheck)
+			recorder.Eventf(
+				&t.Machine,
+				corev1.EventTypeNormal,
+				healthcheckingv1alpha1.EventDetectedUnhealthy,
+				"Machine %v has unhealthy node %v",
+				t.Machine.Name,
+				t.nodeName(),
+			)
 			nextCheckTimes = append(nextCheckTimes, nextCheck)
 			continue
 		}
@@ -368,14 +389,36 @@ func (t *target) remediate(r *ReconcileMachineHealthCheck) error {
 		}
 	}
 	if t.isMaster() {
+		r.recorder.Eventf(
+			&t.Machine,
+			corev1.EventTypeNormal,
+			healthcheckingv1alpha1.EventSkippedMaster,
+			"Machine %v is a master node, skipping remediation",
+			t.Machine.Name,
+		)
 		glog.Infof("%s: master node, skipping remediation", t.string())
 		return nil
 	}
 
 	glog.Infof("%s: deleting", t.string())
 	if err := r.client.Delete(context.TODO(), &t.Machine); err != nil {
+		r.recorder.Eventf(
+			&t.Machine,
+			corev1.EventTypeWarning,
+			healthcheckingv1alpha1.EventMachineDeletionFailed,
+			"Machine %v remediation failed: unable to delete Machine object: %v",
+			t.Machine.Name,
+			err,
+		)
 		return fmt.Errorf("%s: failed to delete machine: %v", t.string(), err)
 	}
+	r.recorder.Eventf(
+		&t.Machine,
+		corev1.EventTypeNormal,
+		healthcheckingv1alpha1.EventMachineDeleted,
+		"Machine %v has been remetiated by deleting Machine object",
+		t.Machine.Name,
+	)
 	return nil
 }
 
@@ -392,8 +435,23 @@ func (t *target) remediationStrategyReboot(r *ReconcileMachineHealthCheck) error
 	glog.Infof("Machine %s has been unhealthy for too long, adding reboot annotation", t.Machine.Name)
 	t.Node.Annotations[machineRebootAnnotationKey] = ""
 	if err := r.client.Update(context.TODO(), t.Node); err != nil {
+		r.recorder.Eventf(
+			t.Node,
+			corev1.EventTypeWarning,
+			healthcheckingv1alpha1.EventRebootAnnotationFailed,
+			"Requesting reboot of node %v failed: %v",
+			t.Node.Name,
+			err,
+		)
 		return err
 	}
+	r.recorder.Eventf(
+		t.Node,
+		corev1.EventTypeNormal,
+		healthcheckingv1alpha1.EventRebootAnnotationAdded,
+		"Requesting reboot of node %v",
+		t.Node.Name,
+	)
 	return nil
 }
 
