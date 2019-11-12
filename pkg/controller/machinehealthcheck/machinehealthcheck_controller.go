@@ -120,7 +120,7 @@ func (r *ReconcileMachineHealthCheck) Reconcile(request reconcile.Request) (reco
 	totalTargets := len(targets)
 
 	// health check all targets and reconcile mhc status
-	currentHealthy, needRemediationTargets, nextCheckTimes, errList := healthCheckTargets(targets, r.recorder)
+	currentHealthy, needRemediationTargets, nextCheckTimes, errList := r.healthCheckTargets(targets)
 	if err := r.reconcileStatus(mhc, totalTargets, currentHealthy); err != nil {
 		glog.Errorf("Reconciling %s: error patching status: %v", request.String(), err)
 		return reconcile.Result{}, err
@@ -137,7 +137,7 @@ func (r *ReconcileMachineHealthCheck) Reconcile(request reconcile.Request) (reco
 		r.recorder.Eventf(
 			mhc,
 			corev1.EventTypeWarning,
-			healthcheckingv1alpha1.EventRemediationRestricted,
+			mhcv1beta1.EventRemediationRestricted,
 			"Remediation restricted due to exceeded number of unhealthy machines (total: %v, unhealthy: %v, maxUnhealthy: %v)",
 			totalTargets,
 			mhc.Spec.MaxUnhealthy,
@@ -204,7 +204,7 @@ func (r *ReconcileMachineHealthCheck) reconcileStatus(mhc *mhcv1beta1.MachineHea
 
 // healthCheckTargets health checks a slice of targets
 // and gives a data to measure the average health
-func healthCheckTargets(targets []target, recorder record.EventRecorder) (int, []target, []time.Duration, []error) {
+func (r *ReconcileMachineHealthCheck) healthCheckTargets(targets []target) (int, []target, []time.Duration, []error) {
 	var nextCheckTimes []time.Duration
 	var errList []error
 	var needRemediationTargets []target
@@ -225,12 +225,12 @@ func healthCheckTargets(targets []target, recorder record.EventRecorder) (int, [
 
 		if nextCheck > 0 {
 			glog.V(3).Infof("Reconciling %s: is likely to go unhealthy in %v", t.string(), nextCheck)
-			recorder.Eventf(
+			r.recorder.Eventf(
 				&t.Machine,
 				corev1.EventTypeNormal,
-				healthcheckingv1alpha1.EventDetectedUnhealthy,
+				mhcv1beta1.EventDetectedUnhealthy,
 				"Machine %v has unhealthy node %v",
-				t.Machine.Name,
+				t.Machine.GetName(),
 				t.nodeName(),
 			)
 			nextCheckTimes = append(nextCheckTimes, nextCheck)
@@ -392,9 +392,9 @@ func (t *target) remediate(r *ReconcileMachineHealthCheck) error {
 		r.recorder.Eventf(
 			&t.Machine,
 			corev1.EventTypeNormal,
-			healthcheckingv1alpha1.EventSkippedMaster,
+			mhcv1beta1.EventSkippedMaster,
 			"Machine %v is a master node, skipping remediation",
-			t.Machine.Name,
+			t.Machine.GetName(),
 		)
 		glog.Infof("%s: master node, skipping remediation", t.string())
 		return nil
@@ -405,9 +405,9 @@ func (t *target) remediate(r *ReconcileMachineHealthCheck) error {
 		r.recorder.Eventf(
 			&t.Machine,
 			corev1.EventTypeWarning,
-			healthcheckingv1alpha1.EventMachineDeletionFailed,
+			mhcv1beta1.EventMachineDeletionFailed,
 			"Machine %v remediation failed: unable to delete Machine object: %v",
-			t.Machine.Name,
+			t.Machine.GetName(),
 			err,
 		)
 		return fmt.Errorf("%s: failed to delete machine: %v", t.string(), err)
@@ -415,9 +415,9 @@ func (t *target) remediate(r *ReconcileMachineHealthCheck) error {
 	r.recorder.Eventf(
 		&t.Machine,
 		corev1.EventTypeNormal,
-		healthcheckingv1alpha1.EventMachineDeleted,
-		"Machine %v has been remetiated by deleting Machine object",
-		t.Machine.Name,
+		mhcv1beta1.EventMachineDeleted,
+		"Machine %v has been remetiated by requesting to delete Machine object",
+		t.Machine.GetName(),
 	)
 	return nil
 }
@@ -436,21 +436,21 @@ func (t *target) remediationStrategyReboot(r *ReconcileMachineHealthCheck) error
 	t.Node.Annotations[machineRebootAnnotationKey] = ""
 	if err := r.client.Update(context.TODO(), t.Node); err != nil {
 		r.recorder.Eventf(
-			t.Node,
+			&t.Machine,
 			corev1.EventTypeWarning,
-			healthcheckingv1alpha1.EventRebootAnnotationFailed,
-			"Requesting reboot of node %v failed: %v",
-			t.Node.Name,
+			mhcv1beta1.EventRebootAnnotationFailed,
+			"Requesting reboot of node associated with machine %v failed: %v",
+			t.Machine.GetName(),
 			err,
 		)
 		return err
 	}
 	r.recorder.Eventf(
-		t.Node,
+		&t.Machine,
 		corev1.EventTypeNormal,
-		healthcheckingv1alpha1.EventRebootAnnotationAdded,
-		"Requesting reboot of node %v",
-		t.Node.Name,
+		mhcv1beta1.EventRebootAnnotationAdded,
+		"Requesting reboot of node associated with machine %v",
+		t.Machine.GetName(),
 	)
 	return nil
 }

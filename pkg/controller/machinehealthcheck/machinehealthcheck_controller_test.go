@@ -139,10 +139,10 @@ func assertEvents(t *testing.T, testCase string, expectedEvents []string, realEv
 
 // newFakeReconciler returns a new reconcile.Reconciler with a fake client
 func newFakeReconciler(initObjects ...runtime.Object) *ReconcileMachineHealthCheck {
-	return newFakeReconcilerCustomRecorder(nil, initObjects...)
+	return newFakeReconcilerWithCustomRecorder(nil, initObjects...)
 }
 
-func newFakeReconcilerCustomRecorder(recorder record.EventRecorder, initObjects ...runtime.Object) *ReconcileMachineHealthCheck {
+func newFakeReconcilerWithCustomRecorder(recorder record.EventRecorder, initObjects ...runtime.Object) *ReconcileMachineHealthCheck {
 	fakeClient := fake.NewFakeClient(initObjects...)
 	return &ReconcileMachineHealthCheck{
 		client:    fakeClient,
@@ -221,7 +221,7 @@ func TestReconcile(t *testing.T) {
 				result: reconcile.Result{},
 				error:  false,
 			},
-			expectedEvents: []string{healthcheckingv1alpha1.EventMachineDeleted},
+			expectedEvents: []string{mhcv1beta1.EventMachineDeleted},
 		},
 		{
 			testCase: "machine with node unhealthy",
@@ -244,7 +244,7 @@ func TestReconcile(t *testing.T) {
 				},
 				error: false,
 			},
-			expectedEvents: []string{healthcheckingv1alpha1.EventDetectedUnhealthy},
+			expectedEvents: []string{mhcv1beta1.EventDetectedUnhealthy},
 		},
 		{
 			testCase: "no target: no machine and bad node annotation",
@@ -286,7 +286,7 @@ func TestReconcile(t *testing.T) {
 				},
 				error: false,
 			},
-			expectedEvents: []string{healthcheckingv1alpha1.EventDetectedUnhealthy},
+			expectedEvents: []string{mhcv1beta1.EventDetectedUnhealthy},
 		},
 	}
 
@@ -299,7 +299,7 @@ func TestReconcile(t *testing.T) {
 			}
 			objects = append(objects, tc.node)
 			recorder := record.NewFakeRecorder(2)
-			r := newFakeReconcilerCustomRecorder(recorder, objects...)
+			r := newFakeReconcilerWithCustomRecorder(recorder, objects...)
 
 			request := reconcile.Request{
 				NamespacedName: types.NamespacedName{
@@ -377,7 +377,7 @@ func TestApplyRemediationReboot(t *testing.T) {
 		},
 	}
 	recorder := record.NewFakeRecorder(2)
-	r := newFakeReconcilerCustomRecorder(recorder, nodeUnhealthyForTooLong, machineUnhealthyForTooLong, machineHealthCheck)
+	r := newFakeReconcilerWithCustomRecorder(recorder, nodeUnhealthyForTooLong, machineUnhealthyForTooLong, machineHealthCheck)
 	target := target{
 		Node:    nodeUnhealthyForTooLong,
 		Machine: *machineUnhealthyForTooLong,
@@ -389,7 +389,7 @@ func TestApplyRemediationReboot(t *testing.T) {
 	assertEvents(
 		t,
 		"apply remediation reboot",
-		[]string{healthcheckingv1alpha1.EventRebootAnnotationAdded},
+		[]string{mhcv1beta1.EventRebootAnnotationAdded},
 		recorder.Events,
 	)
 
@@ -1958,7 +1958,7 @@ func TestRemediate(t *testing.T) {
 			},
 			deletion:       true,
 			expectedError:  false,
-			expectedEvents: []string{healthcheckingv1alpha1.EventMachineDeleted},
+			expectedEvents: []string{mhcv1beta1.EventMachineDeleted},
 		},
 		{
 			testCase: "node master",
@@ -1996,7 +1996,7 @@ func TestRemediate(t *testing.T) {
 			},
 			deletion:       false,
 			expectedError:  false,
-			expectedEvents: []string{healthcheckingv1alpha1.EventSkippedMaster},
+			expectedEvents: []string{mhcv1beta1.EventSkippedMaster},
 		},
 		{
 			testCase: "machine master",
@@ -2020,7 +2020,7 @@ func TestRemediate(t *testing.T) {
 			},
 			deletion:       false,
 			expectedError:  false,
-			expectedEvents: []string{healthcheckingv1alpha1.EventSkippedMaster},
+			expectedEvents: []string{mhcv1beta1.EventSkippedMaster},
 		},
 	}
 
@@ -2029,7 +2029,7 @@ func TestRemediate(t *testing.T) {
 			var objects []runtime.Object
 			objects = append(objects, runtime.Object(&tc.target.Machine))
 			recorder := record.NewFakeRecorder(2)
-			r := newFakeReconcilerCustomRecorder(recorder, objects...)
+			r := newFakeReconcilerWithCustomRecorder(recorder, objects...)
 			if err := tc.target.remediate(r); (err != nil) != tc.expectedError {
 				t.Errorf("Case: %v. Got: %v, expected error: %v", tc.testCase, err, tc.expectedError)
 			}
@@ -2444,8 +2444,9 @@ func TestHealthCheckTargets(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		recorder := record.NewFakeRecorder(2)
+		r := newFakeReconcilerWithCustomRecorder(recorder)
 		t.Run(tc.testCase, func(t *testing.T) {
-			currentHealhty, needRemediationTargets, nextCheckTimes, errList := healthCheckTargets(tc.targets, recorder)
+			currentHealhty, needRemediationTargets, nextCheckTimes, errList := r.healthCheckTargets(tc.targets)
 			if currentHealhty != tc.currentHealthy {
 				t.Errorf("Case: %v. Got: %v, expected: %v", tc.testCase, currentHealhty, tc.currentHealthy)
 			}
