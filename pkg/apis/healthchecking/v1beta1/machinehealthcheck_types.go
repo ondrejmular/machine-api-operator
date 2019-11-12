@@ -6,31 +6,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
-const (
-	// EventRemediationRestricted is emitted in case when machine remediation
-	// is restricted by remediation circuit shorting logic
-	EventRemediationRestricted string = "MHCRemediationRestricted"
-	// EventDetectedUnhealthy is emitted in case a node asociated with a
-	// machine was detected unhleathy
-	EventDetectedUnhealthy string = "MHCDetectedUnhealthy"
-	// EventSkippedMaster is emitted in case an unhealthy node (or a machine
-	// associated with the node) has Master role and reboot remediation strategy
-	// is not enabled
-	EventSkippedMaster string = "MHCSkippedMaster"
-	// EventMachineDeletionFailed is emitted in case remediation of a machine
-	// is required but deletion of its Machine object failed
-	EventMachineDeletionFailed string = "MHCMachineDeletionFailed"
-	// EventMachineDeleted is emitted when machine was successfully remediated
-	// by deleting its Machine object
-	EventMachineDeleted string = "MHCMachineDeleted"
-	// EventRebootAnnotationFailed is emitted in case adding reboot annotation
-	// to a Node object failed
-	EventRebootAnnotationFailed string = "MHCRebootAnnotationFailed"
-	// EventRebootAnnotationAdded is emitted when reboot annotation was
-	// successfully added to a Node object
-	EventRebootAnnotationAdded string = "MHCRebootAnnotationAdded"
-)
-
 // RemediationStrategyType contains remediation strategy type
 type RemediationStrategyType string
 

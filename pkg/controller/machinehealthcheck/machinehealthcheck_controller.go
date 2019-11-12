@@ -40,6 +40,30 @@ const (
 	remediationStrategyReboot     = mhcv1beta1.RemediationStrategyType("reboot")
 	timeoutForMachineToHaveNode   = 10 * time.Minute
 	controllerName                = "machinehealthcheck-controller"
+
+	// Event types
+	// eventRemediationRestricted is emitted in case when machine remediation
+	// is restricted by remediation circuit shorting logic
+	eventRemediationRestricted string = "MHCRemediationRestricted"
+	// eventDetectedUnhealthy is emitted in case a node asociated with a
+	// machine was detected unhleathy
+	eventDetectedUnhealthy string = "MHCDetectedUnhealthy"
+	// eventSkippedMaster is emitted in case an unhealthy node (or a machine
+	// associated with the node) has Master role and reboot remediation strategy
+	// is not enabled
+	eventSkippedMaster string = "MHCSkippedMaster"
+	// eventMachineDeletionFailed is emitted in case remediation of a machine
+	// is required but deletion of its Machine object failed
+	eventMachineDeletionFailed string = "MHCMachineDeletionFailed"
+	// eventMachineDeleted is emitted when machine was successfully remediated
+	// by deleting its Machine object
+	eventMachineDeleted string = "MHCMachineDeleted"
+	// eventRebootAnnotationFailed is emitted in case adding reboot annotation
+	// to a Node object failed
+	eventRebootAnnotationFailed string = "MHCRebootAnnotationFailed"
+	// eventRebootAnnotationAdded is emitted when reboot annotation was
+	// successfully added to a Node object
+	eventRebootAnnotationAdded string = "MHCRebootAnnotationAdded"
 )
 
 // Add creates a new MachineHealthCheck Controller and adds it to the Manager. The Manager will set fields on the Controller
@@ -137,7 +161,7 @@ func (r *ReconcileMachineHealthCheck) Reconcile(request reconcile.Request) (reco
 		r.recorder.Eventf(
 			mhc,
 			corev1.EventTypeWarning,
-			mhcv1beta1.EventRemediationRestricted,
+			eventRemediationRestricted,
 			"Remediation restricted due to exceeded number of unhealthy machines (total: %v, unhealthy: %v, maxUnhealthy: %v)",
 			totalTargets,
 			mhc.Spec.MaxUnhealthy,
@@ -228,7 +252,7 @@ func (r *ReconcileMachineHealthCheck) healthCheckTargets(targets []target) (int,
 			r.recorder.Eventf(
 				&t.Machine,
 				corev1.EventTypeNormal,
-				mhcv1beta1.EventDetectedUnhealthy,
+				eventDetectedUnhealthy,
 				"Machine %v has unhealthy node %v",
 				t.Machine.GetName(),
 				t.nodeName(),
@@ -392,7 +416,7 @@ func (t *target) remediate(r *ReconcileMachineHealthCheck) error {
 		r.recorder.Eventf(
 			&t.Machine,
 			corev1.EventTypeNormal,
-			mhcv1beta1.EventSkippedMaster,
+			eventSkippedMaster,
 			"Machine %v is a master node, skipping remediation",
 			t.Machine.GetName(),
 		)
@@ -405,7 +429,7 @@ func (t *target) remediate(r *ReconcileMachineHealthCheck) error {
 		r.recorder.Eventf(
 			&t.Machine,
 			corev1.EventTypeWarning,
-			mhcv1beta1.EventMachineDeletionFailed,
+			eventMachineDeletionFailed,
 			"Machine %v remediation failed: unable to delete Machine object: %v",
 			t.Machine.GetName(),
 			err,
@@ -415,7 +439,7 @@ func (t *target) remediate(r *ReconcileMachineHealthCheck) error {
 	r.recorder.Eventf(
 		&t.Machine,
 		corev1.EventTypeNormal,
-		mhcv1beta1.EventMachineDeleted,
+		eventMachineDeleted,
 		"Machine %v has been remetiated by requesting to delete Machine object",
 		t.Machine.GetName(),
 	)
@@ -438,7 +462,7 @@ func (t *target) remediationStrategyReboot(r *ReconcileMachineHealthCheck) error
 		r.recorder.Eventf(
 			&t.Machine,
 			corev1.EventTypeWarning,
-			mhcv1beta1.EventRebootAnnotationFailed,
+			eventRebootAnnotationFailed,
 			"Requesting reboot of node associated with machine %v failed: %v",
 			t.Machine.GetName(),
 			err,
@@ -448,7 +472,7 @@ func (t *target) remediationStrategyReboot(r *ReconcileMachineHealthCheck) error
 	r.recorder.Eventf(
 		&t.Machine,
 		corev1.EventTypeNormal,
-		mhcv1beta1.EventRebootAnnotationAdded,
+		eventRebootAnnotationAdded,
 		"Requesting reboot of node associated with machine %v",
 		t.Machine.GetName(),
 	)

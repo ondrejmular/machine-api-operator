@@ -221,7 +221,7 @@ func TestReconcile(t *testing.T) {
 				result: reconcile.Result{},
 				error:  false,
 			},
-			expectedEvents: []string{mhcv1beta1.EventMachineDeleted},
+			expectedEvents: []string{eventMachineDeleted},
 		},
 		{
 			testCase: "machine with node unhealthy",
@@ -244,7 +244,7 @@ func TestReconcile(t *testing.T) {
 				},
 				error: false,
 			},
-			expectedEvents: []string{mhcv1beta1.EventDetectedUnhealthy},
+			expectedEvents: []string{eventDetectedUnhealthy},
 		},
 		{
 			testCase: "no target: no machine and bad node annotation",
@@ -286,7 +286,7 @@ func TestReconcile(t *testing.T) {
 				},
 				error: false,
 			},
-			expectedEvents: []string{mhcv1beta1.EventDetectedUnhealthy},
+			expectedEvents: []string{eventDetectedUnhealthy},
 		},
 	}
 
@@ -389,7 +389,7 @@ func TestApplyRemediationReboot(t *testing.T) {
 	assertEvents(
 		t,
 		"apply remediation reboot",
-		[]string{mhcv1beta1.EventRebootAnnotationAdded},
+		[]string{eventRebootAnnotationAdded},
 		recorder.Events,
 	)
 
@@ -1958,7 +1958,7 @@ func TestRemediate(t *testing.T) {
 			},
 			deletion:       true,
 			expectedError:  false,
-			expectedEvents: []string{mhcv1beta1.EventMachineDeleted},
+			expectedEvents: []string{eventMachineDeleted},
 		},
 		{
 			testCase: "node master",
@@ -1996,7 +1996,7 @@ func TestRemediate(t *testing.T) {
 			},
 			deletion:       false,
 			expectedError:  false,
-			expectedEvents: []string{mhcv1beta1.EventSkippedMaster},
+			expectedEvents: []string{eventSkippedMaster},
 		},
 		{
 			testCase: "machine master",
@@ -2020,7 +2020,7 @@ func TestRemediate(t *testing.T) {
 			},
 			deletion:       false,
 			expectedError:  false,
-			expectedEvents: []string{mhcv1beta1.EventSkippedMaster},
+			expectedEvents: []string{eventSkippedMaster},
 		},
 	}
 
