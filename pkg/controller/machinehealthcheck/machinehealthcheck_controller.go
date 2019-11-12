@@ -254,7 +254,7 @@ func (r *ReconcileMachineHealthCheck) healthCheckTargets(targets []target) (int,
 				corev1.EventTypeNormal,
 				eventDetectedUnhealthy,
 				"Machine %v has unhealthy node %v",
-				t.Machine.GetName(),
+				t.string(),
 				t.nodeName(),
 			)
 			nextCheckTimes = append(nextCheckTimes, nextCheck)
@@ -418,7 +418,7 @@ func (t *target) remediate(r *ReconcileMachineHealthCheck) error {
 			corev1.EventTypeNormal,
 			eventSkippedMaster,
 			"Machine %v is a master node, skipping remediation",
-			t.Machine.GetName(),
+			t.string(),
 		)
 		glog.Infof("%s: master node, skipping remediation", t.string())
 		return nil
@@ -431,7 +431,7 @@ func (t *target) remediate(r *ReconcileMachineHealthCheck) error {
 			corev1.EventTypeWarning,
 			eventMachineDeletionFailed,
 			"Machine %v remediation failed: unable to delete Machine object: %v",
-			t.Machine.GetName(),
+			t.string(),
 			err,
 		)
 		return fmt.Errorf("%s: failed to delete machine: %v", t.string(), err)
@@ -441,7 +441,7 @@ func (t *target) remediate(r *ReconcileMachineHealthCheck) error {
 		corev1.EventTypeNormal,
 		eventMachineDeleted,
 		"Machine %v has been remetiated by requesting to delete Machine object",
-		t.Machine.GetName(),
+		t.string(),
 	)
 	return nil
 }
@@ -464,7 +464,7 @@ func (t *target) remediationStrategyReboot(r *ReconcileMachineHealthCheck) error
 			corev1.EventTypeWarning,
 			eventRebootAnnotationFailed,
 			"Requesting reboot of node associated with machine %v failed: %v",
-			t.Machine.GetName(),
+			t.string(),
 			err,
 		)
 		return err
@@ -474,7 +474,7 @@ func (t *target) remediationStrategyReboot(r *ReconcileMachineHealthCheck) error
 		corev1.EventTypeNormal,
 		eventRebootAnnotationAdded,
 		"Requesting reboot of node associated with machine %v",
-		t.Machine.GetName(),
+		t.string(),
 	)
 	return nil
 }
